@@ -38,8 +38,8 @@ partly done.
 | 2.3 configurable integrity (`-hash`, `check`, `-savelist`, `-checklist`) | ✅ done |
 | 2.4 external codecs (`-ma`) | ❌ discarded (ADR-006); the LZ4 work was removed from the tree |
 | ZPAQL(II) phase A: new interpreter loop | ✅ done (2.2× on `-m1`/`-m2` in interpreter-only builds) |
-| ZPAQL(II) phase B: W^X, batched runs, native fast paths for `lazy2`/`lzpre`/`e8e9` | ✅ done (−28 % CPU extracting `-m1`/`-m2`) |
-| ZPAQL(II) phase B: native inverse BWT, superinstructions, compile cache | 🚧 **next** |
+| ZPAQL(II) phase B: W^X, batched runs, native fast paths for all four 7.15 PCOMPs (`lazy2`, `lzpre`, `bwtrle`, `e8e9`) | ✅ done (−28 % CPU extracting `-m1`/`-m2`) |
+| ZPAQL(II) phase B: superinstructions, compile cache | 🚧 **next** |
 
 ### Platforms
 
@@ -71,10 +71,9 @@ In the order it will be done.
 ### 1. ZPAQL(II) phase B: the engine
 
 Done: W^X for both JITs, batched runs (one call into the JIT per 4 KB),
-native fast paths for the `lazy2`, `lzpre` and `e8e9` postprocessors
-(`docs/ZPAQL.md`).  Left:
+native fast paths for the four postprocessors 7.15's own methods generate
+(`lazy2`, `lzpre`, `bwtrle`, `e8e9`; `docs/ZPAQL.md`).  Left:
 
-* **Native inverse BWT** (`bwtrle`, already recognised): `-m3` on text.
 * **Superinstructions** for common pairs in the JIT.
 * **Compile cache** keyed by the config, for archives with many blocks.
 

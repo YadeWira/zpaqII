@@ -33,7 +33,7 @@ The idea for zpaqII came from this encode.su forum thread:
 | Pascal host (`host/`) | ✅ add, extract, list, test, check |
 | ZPAQL VM, interpreter | ✅ ZPAQL(II) phase A (`docs/ZPAQL.md`) |
 | ZPAQL VM, JIT | ✅ x86-64 Linux only; W^X, batched runs |
-| Native fast paths for 7.15's PCOMPs | ✅ LZ77 (`lazy2`, `lzpre`), E8E9; BWT next |
+| Native fast paths for 7.15's PCOMPs | ✅ LZ77 (`lazy2`, `lzpre`), BWT, E8E9 |
 | Predictor JIT | ✅ x86-64 Linux only |
 | Hardware SHA-1 | ✅ x86 SHA-NI; ARMv8 pending |
 | Turbo fragmenter (`-turbo`) | ✅ |

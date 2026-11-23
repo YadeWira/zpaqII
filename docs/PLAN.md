@@ -1136,3 +1136,14 @@ Found along the way and fixed:
 * `zpaql_dif`'s new batch checks found that a PCOMP fed random bytes can
   legitimately run ~10^10 instructions (manifest config 23) or never halt
   (inverse BWT at EOF): those run on real streams in `fastpath_dif` instead.
+
+## Phase B, part 2: native inverse BWT
+
+`bwtrle`, both traversals (the faster one for blocks up to 16 MB and the
+other) with and without E8E9, transcribed line by line like the others; the
+block bytes of a batch are stored with one loop.  `-m3` extraction: 11 276 M →
+11 059 M instructions (the context model dominates `-m3`).  `fastpath_dif`
+gained real blocks of random bytes and of 1 to 7 bytes (the last caught a
+mutation in the pending-bytes tail of the slow E8E9 traversal that 7-byte
+blocks missed); random input is not used for the inverse BWT because on
+random bytes its list has cycles and it never halts, in the VM too.

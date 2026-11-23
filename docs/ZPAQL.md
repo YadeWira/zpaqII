@@ -109,7 +109,7 @@ The postprocessors 7.15's own methods generate are fixed programs:
 | `lazy2` | level 1 LZ77 (variable-length codes) | E8E9, `rb` = args[0]−4 (0..8) | yes |
 | `lzpre` | level 2 LZ77 (byte-aligned) | E8E9, `$3` = args[2] (0..255) | yes |
 | `e8e9` | level 0 with E8E9 | — | yes |
-| `bwtrle` | level 3 inverse BWT | E8E9, block ≤ 16 MB or not | recognised, still runs on the JIT |
+| `bwtrle` | level 3 inverse BWT | E8E9, block ≤ 16 MB (faster traversal) or not | yes |
 
 When a block's PCOMP is loaded (`zq_zpaql_initp`), `zq_fast_detect()` reads the
 parameters from the bytecode, compiles the template again with them and
@@ -134,11 +134,11 @@ core, median of 7 on a shared machine (so take it as ±10 %):
 |---|---|---|---|---|
 | `-m1` | 530 M | 447 M | **352 M** (−34 %) | 741 → 533 ms (−28 %) |
 | `-m2` | 507 M | 433 M | **334 M** (−34 %) | 385 → 272 ms (−29 %) |
-| `-m3` | 11 705 M | 11 276 M | 11 282 M (−4 %) | 7470 → 7152 ms (−4 %) |
+| `-m3` | 11 705 M | 11 276 M | 11 059 M (−5.5 %) | 7831 → 7696 ms |
 
 Under callgrind SHA-1 runs the portable code (no SHA-NI), so the absolute
 counts overstate it; the differences are the engine.  `-m3` is dominated by
-the context model, and its BWT postprocessor is not native yet.
+the context model; its inverse BWT is native, but it was already a small part.
 
 ### Verification
 
@@ -150,14 +150,16 @@ the context model, and its BWT postprocessor is not native yet.
 * `make test-fastpath` (`tests/unit/fastpath_dif.c`): every parameter variant
   is recognised and a one-byte change is rejected; native vs the one-step
   reference on random input (state after each batch, M and H at the end, then
-  end of segment); and real blocks (text, and this executable for E8E9)
-  compressed with 7.15's method strings, extracted with and without the fast
-  path.  Six deliberate mutations of `fastpath.c` were each caught.
+  end of segment); and real blocks (text, this executable for E8E9, random
+  bytes, and blocks of 1 to 7 bytes) compressed with 7.15's method strings,
+  extracted with and without the fast path.  The inverse BWT gets no random
+  input: on random bytes its list is a permutation with cycles and the
+  program never halts, in the VM too.  Eleven deliberate mutations of
+  `fastpath.c` (six in the LZ77/E8E9 code, five in the BWT) were each caught.
 * `make test`, `make matrix` and the fuzz suite go through the fast path by
   default.
 
 ## Next
 
-1. **Native inverse BWT** (`bwtrle`, both traversals): `-m3` text.
-2. **Superinstructions** in the JIT for common pairs.
-3. **Compile cache** keyed by the config, for archives with many blocks.
+1. **Superinstructions** in the JIT for common pairs.
+2. **Compile cache** keyed by the config, for archives with many blocks.

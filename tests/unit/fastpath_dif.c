@@ -107,7 +107,7 @@ static const char *const families[] = {
     "x4,6,0", "x4,6,4", "x4,6,255",
     /* e8e9 */
     "x4,4",
-    /* bwtrle (recognised; not run natively yet) */
+    /* bwtrle: faster traversal (args[0] <= 4) and the other */
     "x4,3", "x5,3", "x4,7", "x5,7",
 };
 
@@ -279,12 +279,15 @@ int main(int argc, char **argv) {
   static const char *const rand_methods[] = {
       "x4,1", "x6,1", "x9,1", "x12,1", "x4,5", "x8,5",
       "x4,2,1", "x4,2,4", "x4,2,64", "x4,6,4", "x4,6,1", "x4,4",
+      /* no bwtrle: the inverse BWT of random bytes is a permutation with
+       * cycles and never halts, in the VM too; it runs on real blocks */
   };
   static const char *const stream_methods[] = {
       "x4,1,4,0,1,15", "x4,1,4,0,2,16", "x4,1,4,0,3,24", "x4,1,5,0,3,24",
       "x6,1,6,0,3,25", "x8,1,4,0,3,27", "x4,5,4,0,3,24", "x6,5,4,0,3,25",
       "x4,2,4,0,3,24", "x4,2,4,0,7,25,1", "x4,6,4,0,3,24", "x4,6,4,0,7,25,1",
       "x4,2,12,0,7,25,1c0,0,511i2", "x4,4",
+      "x4,3ci1", "x4,7ci1", "x5,3ci1", "x5,7ci1",
   };
   zq_u8 *text, *code;
   int ntext, ncode = 0;
@@ -311,9 +314,16 @@ int main(int argc, char **argv) {
     }
   }
   code = load("/proc/self/exe", &ncode);
-  for (i = 0; i < sizeof(stream_methods) / sizeof(stream_methods[0]); ++i) {
-    test_stream(stream_methods[i], "text", text, ntext);
-    if (code) test_stream(stream_methods[i], "x86", code, ncode);
+  {
+    static zq_u8 noise[300000];
+    int k;
+    for (k = 0; k < (int)sizeof(noise); ++k) noise[k] = (zq_u8)rnd();
+    for (i = 0; i < sizeof(stream_methods) / sizeof(stream_methods[0]); ++i) {
+      test_stream(stream_methods[i], "text", text, ntext);
+      if (code) test_stream(stream_methods[i], "x86", code, ncode);
+      test_stream(stream_methods[i], "random", noise, (int)sizeof(noise));
+      for (k = 1; k <= 7; ++k) test_stream(stream_methods[i], "tiny", text, k);
+    }
   }
   free(text);
   free(code);

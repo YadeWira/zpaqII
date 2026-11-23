@@ -722,6 +722,246 @@ static void fp_e8e9(fp_vm *vm, zq_u32 a) {
 }
 
 /* ------------------------------------------------------------------ */
+/* bwtrle (level 3): inverse BWT                                       */
+/* ------------------------------------------------------------------ */
+
+/* "a> 255 ifnot *b=a b++ elsel <inverse BWT> endif halt".  M holds the BWT
+ * block and its 4-byte index, H the counts and the linked list. */
+static void fp_bwt(fp_vm *vm, zq_u32 a, int slow, int e8) {
+  zq_zpaql *z = vm->z;
+  zq_u32 b = z->b, c = z->c, d = z->d, t;
+
+  if (!(a > 255)) {
+    M(b) = (zq_u8)a;
+    b++;
+    goto halt;
+  }
+
+  /* (index in last 4 bytes, put in c and R1) */
+  b--;
+  a = M(b);
+  b--;
+  a <<= 8;
+  a += M(b);
+  b--;
+  a <<= 8;
+  a += M(b);
+  b--;
+  a <<= 8;
+  a += M(b);
+  c = a;
+  R(1) = a;
+
+  /* (save size in R2) */
+  a = b;
+  R(2) = a;
+
+  /* (count bytes in H[~1..~255, ~0])
+   * do a=b a> 0 if b-- a=*b a++ a&= 255 d=a d! *d++ forever endif */
+  for (;;) {
+    a = b;
+    if (!(a > 0)) break;
+    b--;
+    a = M(b);
+    a++;
+    a &= 255;
+    d = a;
+    d = ~d;
+    H(d)++;
+  }
+
+  /* (cumulative counts) d=0 d! *d= 1 a=0
+   * do a+=*d *d=a d-- d<>a a! a> 255 a! d<>a until */
+  d = 0;
+  d = ~d;
+  H(d) = 1;
+  a = 0;
+  for (;;) {
+    int f;
+    a += H(d);
+    H(d) = a;
+    d--;
+    t = d, d = a, a = t;
+    a = ~a;
+    f = a > 255;
+    a = ~a;
+    t = d, d = a, a = t;
+    if (f) break;
+  }
+
+  /* (build first part of linked list in H[0..idx-1])
+   * b=0 do a=c a>b if d=*b d! *d++ d=*d d-- *d=b b++ forever endif */
+  b = 0;
+  for (;;) {
+    a = c;
+    if (!(a > b)) break;
+    d = M(b);
+    d = ~d;
+    H(d)++;
+    d = H(d);
+    d--;
+    H(d) = b;
+    b++;
+  }
+
+  /* (rest of list in H[idx+1..n-1]) b=c b++ c=r 2 do ... */
+  b = c;
+  b++;
+  c = R(2);
+  for (;;) {
+    a = c;
+    if (!(a > b)) break;
+    d = M(b);
+    d = ~d;
+    H(d)++;
+    d = H(d);
+    d--;
+    H(d) = b;
+    b++;
+  }
+
+  if (!slow) {
+    /* (copy M to low 8 bits of H to reduce cache misses in next loop)
+     * b=0 do a=c a>b if d=b a=*d a<<= 8 a+=*b *d=a b++ forever endif */
+    b = 0;
+    for (;;) {
+      a = c;
+      if (!(a > b)) break;
+      d = b;
+      a = H(d);
+      a <<= 8;
+      a += M(b);
+      H(d) = a;
+      b++;
+    }
+
+    /* (traverse list and output or copy to M)
+     * d=r 1 b=0 do a=d a== 0 ifnot a=*d a>>= 8 d=a
+     *   [*b=*d b++ | a=*d out] forever endif */
+    d = R(1);
+    b = 0;
+    for (;;) {
+      a = d;
+      if (a == 0) break;
+      a = H(d);
+      a >>= 8;
+      d = a;
+      if (e8) {
+        M(b) = (zq_u8)H(d);
+        b++;
+      } else {
+        a = H(d);
+        fp_out(vm, a);
+      }
+    }
+
+    /* (e8e9 transform to out) d=b b=0 do ... */
+    if (e8) {
+      d = b;
+      b = 0;
+      fp_e8e9_pass(vm, &a, &b, &c, d);
+    }
+  } else if (!e8) {
+    /* (traverse list and output)
+     * d=r 1 do a=d a== 0 ifnot d=*d b=d a=*b out forever endif */
+    d = R(1);
+    for (;;) {
+      a = d;
+      if (a == 0) break;
+      d = H(d);
+      b = d;
+      a = M(b);
+      fp_out(vm, a);
+    }
+  } else {
+    /* (R2 = output size without EOS) a=r 2 a-- r=a 2 */
+    a = R(2);
+    a--;
+    R(2) = a;
+
+    /* (traverse list (d = IBWT pointer) and output inverse e8e9)
+     * c=0 d=r 1 do a=d a== 0 ifnot d=*d ... c++ forever endif */
+    c = 0;
+    d = R(1);
+    for (;;) {
+      a = d;
+      if (a == 0) break;
+      d = H(d);
+
+      /* b=d a=*b a<<= 24 b=a  a=r 4 r=a 5 a>>= 8 a|=b r=a 4 */
+      b = d;
+      a = M(b);
+      a <<= 24;
+      b = a;
+      a = R(4);
+      R(5) = a;
+      a >>= 8;
+      a |= b;
+      R(4) = a;
+
+      /* a=c a> 3 if a=r 5 a&= 254 a== 232 if
+       *   a=r 4 a>>= 24 b=a a++ a&= 254 a< 2 if
+       *     a=r 4 a-=c a+= 4 a<<= 8 a>>= 8 b<>a a<<= 24 a+=b r=a 4
+       * endif endif endif */
+      a = c;
+      if (a > 3) {
+        a = R(5);
+        a &= 254;
+        if (a == 232) {
+          a = R(4);
+          a >>= 24;
+          b = a;
+          a++;
+          a &= 254;
+          if (a < 2) {
+            a = R(4);
+            a -= c;
+            a += 4;
+            a <<= 8;
+            a >>= 8;
+            t = b, b = a, a = t;
+            a <<= 24;
+            a += b;
+            R(4) = a;
+          }
+        }
+      }
+
+      /* a=c a> 3 if a=r 5 out endif c++ */
+      a = c;
+      if (a > 3) {
+        a = R(5);
+        fp_out(vm, a);
+      }
+      c++;
+    }
+
+    /* (output up to 4 pending bytes in R4)
+     * b=r 4
+     * a=c a> 3 a=b if out endif a>>= 8 b=a   (and > 2, > 1, > 0) */
+    b = R(4);
+    {
+      static const zq_u32 lim[4] = {3, 2, 1, 0};
+      int i;
+      for (i = 0; i < 4; ++i) {
+        int f;
+        a = c;
+        f = a > lim[i];
+        a = b;
+        if (f) fp_out(vm, a);
+        if (i < 3) {
+          a >>= 8;
+          b = a;
+        }
+      }
+    }
+  }
+
+halt:
+  z->a = a, z->b = b, z->c = c, z->d = d;
+}
+
+/* ------------------------------------------------------------------ */
 /* Dispatch                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -731,18 +971,28 @@ static void fp_one(fp_vm *vm, zq_u32 a) {
     case FP_LZ1: fp_lz1(vm, a, z->fparam, z->fe8); break;
     case FP_LZ2: fp_lz2(vm, a, (zq_u32)z->fparam, z->fe8); break;
     case FP_E8E9: fp_e8e9(vm, a); break;
+    case FP_BWT_FAST: fp_bwt(vm, a, 0, z->fe8); break;
+    case FP_BWT_SLOW: fp_bwt(vm, a, 1, z->fe8); break;
   }
 }
 
 int zq_fast_run(zq_zpaql *z, const zq_u8 *buf, int n, zq_u32 input) {
   fp_vm vm;
-  if (z->fast != FP_LZ1 && z->fast != FP_LZ2 && z->fast != FP_E8E9) return 0;
+  if (z->fast == FP_NONE) return 0;
   fp_open(&vm, z);
   if (!buf) {
     fp_one(&vm, input);
   } else {
     int i;
-    for (i = 0; i < n; ++i) fp_one(&vm, buf[i]);
+    if (z->fast == FP_BWT_FAST || z->fast == FP_BWT_SLOW) {
+      /* bytes of the block: *b=a b++ (a stays the last input) */
+      zq_u32 b = z->b;
+      for (i = 0; i < n; ++i) vm.m[b & vm.mmask] = buf[i], ++b;
+      z->b = b;
+      z->a = buf[n - 1];
+    } else {
+      for (i = 0; i < n; ++i) fp_one(&vm, buf[i]);
+    }
   }
   z->bufptr = vm.bp;
   return 1;

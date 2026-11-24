@@ -74,8 +74,13 @@ Done: W^X for both JITs, batched runs (one call into the JIT per 4 KB),
 native fast paths for the four postprocessors 7.15's own methods generate
 (`lazy2`, `lzpre`, `bwtrle`, `e8e9`; `docs/ZPAQL.md`).  Left:
 
-* **Superinstructions** for common pairs in the JIT.
 * **Compile cache** keyed by the config, for archives with many blocks.
+
+Measured and dropped, so they are not rediscovered (numbers in
+`docs/ZPAQL.md`): superinstructions for the JIT (it is already ahead of the
+oracle everywhere, and the remaining time is the model doing its work) and a
+hand-written SHA-1 (the portable code is at the scalar ceiling, and the AVX2
+speed-up needs four independent streams, which a zpaq block does not have).
 
 ### 2. Platform loose ends
 

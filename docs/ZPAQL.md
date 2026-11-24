@@ -159,7 +159,41 @@ the context model; its inverse BWT is native, but it was already a small part.
 * `make test`, `make matrix` and the fuzz suite go through the fast path by
   default.
 
+## Where the time actually goes
+
+Before adding superinstructions to the JIT we profiled the extraction, and the
+result was not what the plan assumed.  `callgrind` on 20 MB of text, single
+thread:
+
+| method | time | largest single cost |
+|---|---|---|
+| `-m1` | 154 ms | `sha1_process` 30.6 % |
+| `-m2` | 134 ms | `sha1_process` 40.3 % |
+| `-m3` | 5773 ms | generated predictor code 54 % |
+
+Two conclusions, both measured rather than assumed:
+
+**The JIT is not a bottleneck to optimise.**  The 54 % in `-m3` is the model
+doing its work — table lookups of `icm`/`isse` — not overhead we introduced.
+Against the oracle on the same machine and corpora, zpaqII is already ahead on
+every method: `-m1` 204 → 154 ms (−25 %), `-m2` 178 → 134 ms (−25 %), `-m3`
+5923 → 5773 ms (−2.5 %).  Superinstructions would shave a share of a share.
+
+**SHA-1 is not worth rewriting.**  It is the largest single cost on the LZ77
+methods, but the portable code already runs at ~437 MB/s isolated (5.9 cycles
+per byte), and five rewrites were each slower: a flat `w[80]` schedule (0.52×),
+four explicit round loops (0.69×), a local `w[16]` instead of the struct's
+(1.03×), and two SIMD message-schedule variants.  The 844 MB/s of `openssl
+speed` comes from hashing *four independent messages* in AVX2 lanes; a zpaq
+block is one stream, so that shape does not apply.  On a CPU without SHA-NI
+(the Xeon E5 v4 in this machine) the scalar chain is the ceiling.
+
+So the useful work left in phase B is the **compile cache**, not the JIT
+instruction set: it helps archives with many blocks, where the same config is
+assembled again and again.
+
 ## Next
 
-1. **Superinstructions** in the JIT for common pairs.
-2. **Compile cache** keyed by the config, for archives with many blocks.
+1. **Compile cache** keyed by the config, for archives with many blocks.
+2. *(measured and dropped)* Superinstructions: see above.
+3. *(measured and dropped)* Rewriting SHA-1 by hand: see above.

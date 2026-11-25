@@ -9,6 +9,15 @@
 #define ZQ_HAVE_SHANI 1
 #endif
 
+/* ARMv8 crypto extensions.  The code is compiled with target("+crypto") so the
+ * build does not require -march=armv8-a+crypto and still runs on CPUs without
+ * the extensions (zq_cpu_features() decides at run time). */
+#if (defined(__aarch64__) || defined(_M_ARM64)) && \
+    (defined(__GNUC__) || defined(__clang__)) && !defined(ZQ_NO_ARMCRYPTO)
+#include <arm_neon.h>
+#define ZQ_HAVE_ARMSHA1 1
+#endif
+
 /* Test hook: force the portable path so a test can compare both
  * implementations on a CPU that has the extensions.  Never used in the
  * archiver itself. */
@@ -59,6 +68,159 @@ static void sha1_process(zq_sha1 *s) {
   s->h[3] += d;
   s->h[4] += e;
 }
+
+#if defined(ZQ_HAVE_ARMSHA1)
+/* One block with the ARMv8 SHA-1 instructions, following the sequence from
+ * ARM/mbedTLS (public domain).  "crypto" enables the intrinsics without
+ * requiring the whole build to raise its -march. */
+#define ZQ_K0 vdupq_n_u32(0x5A827999u)
+#define ZQ_K1 vdupq_n_u32(0x6ED9EBA1u)
+#define ZQ_K2 vdupq_n_u32(0x8F1BBCDCu)
+#define ZQ_K3 vdupq_n_u32(0xCA62C1D6u)
+
+__attribute__((target("+crypto"))) static void sha1_blocks_arm(
+    zq_u32 *state, const unsigned char *data, size_t blocks) {
+  uint32x4_t ABCD = vld1q_u32(&state[0]);
+  zq_u32 E0 = state[4], E1;
+  uint32x4_t ABCD_SAVED;
+  zq_u32 E0_SAVED;
+  uint32x4_t MSG0, MSG1, MSG2, MSG3, TMP0, TMP1;
+
+  while (blocks--) {
+    ABCD_SAVED = ABCD;
+    E0_SAVED = E0;
+
+    MSG0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data)));
+    MSG1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 16)));
+    MSG2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 32)));
+    MSG3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 48)));
+
+    TMP0 = vaddq_u32(MSG0, ZQ_K0);
+    TMP1 = vaddq_u32(MSG1, ZQ_K0);
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1cq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG2, ZQ_K0);
+    MSG0 = vsha1su0q_u32(MSG0, MSG1, MSG2);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1cq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG3, ZQ_K0);
+    MSG0 = vsha1su1q_u32(MSG0, MSG3);
+    MSG1 = vsha1su0q_u32(MSG1, MSG2, MSG3);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1cq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG0, ZQ_K0);
+    MSG1 = vsha1su1q_u32(MSG1, MSG0);
+    MSG2 = vsha1su0q_u32(MSG2, MSG3, MSG0);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1cq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG1, ZQ_K1);
+    MSG2 = vsha1su1q_u32(MSG2, MSG1);
+    MSG3 = vsha1su0q_u32(MSG3, MSG0, MSG1);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1cq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG2, ZQ_K1);
+    MSG3 = vsha1su1q_u32(MSG3, MSG2);
+    MSG0 = vsha1su0q_u32(MSG0, MSG1, MSG2);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG3, ZQ_K1);
+    MSG0 = vsha1su1q_u32(MSG0, MSG3);
+    MSG1 = vsha1su0q_u32(MSG1, MSG2, MSG3);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG0, ZQ_K1);
+    MSG1 = vsha1su1q_u32(MSG1, MSG0);
+    MSG2 = vsha1su0q_u32(MSG2, MSG3, MSG0);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG1, ZQ_K1);
+    MSG2 = vsha1su1q_u32(MSG2, MSG1);
+    MSG3 = vsha1su0q_u32(MSG3, MSG0, MSG1);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG2, ZQ_K2);
+    MSG3 = vsha1su1q_u32(MSG3, MSG2);
+    MSG0 = vsha1su0q_u32(MSG0, MSG1, MSG2);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG3, ZQ_K2);
+    MSG0 = vsha1su1q_u32(MSG0, MSG3);
+    MSG1 = vsha1su0q_u32(MSG1, MSG2, MSG3);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1mq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG0, ZQ_K2);
+    MSG1 = vsha1su1q_u32(MSG1, MSG0);
+    MSG2 = vsha1su0q_u32(MSG2, MSG3, MSG0);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1mq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG1, ZQ_K2);
+    MSG2 = vsha1su1q_u32(MSG2, MSG1);
+    MSG3 = vsha1su0q_u32(MSG3, MSG0, MSG1);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1mq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG2, ZQ_K2);
+    MSG3 = vsha1su1q_u32(MSG3, MSG2);
+    MSG0 = vsha1su0q_u32(MSG0, MSG1, MSG2);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1mq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG3, ZQ_K3);
+    MSG0 = vsha1su1q_u32(MSG0, MSG3);
+    MSG1 = vsha1su0q_u32(MSG1, MSG2, MSG3);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1mq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG0, ZQ_K3);
+    MSG1 = vsha1su1q_u32(MSG1, MSG0);
+    MSG2 = vsha1su0q_u32(MSG2, MSG3, MSG0);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG1, ZQ_K3);
+    MSG2 = vsha1su1q_u32(MSG2, MSG1);
+    MSG3 = vsha1su0q_u32(MSG3, MSG0, MSG1);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E0, TMP0);
+    TMP0 = vaddq_u32(MSG2, ZQ_K3);
+    MSG3 = vsha1su1q_u32(MSG3, MSG2);
+    MSG0 = vsha1su0q_u32(MSG0, MSG1, MSG2);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E1, TMP1);
+    TMP1 = vaddq_u32(MSG3, ZQ_K3);
+    MSG0 = vsha1su1q_u32(MSG0, MSG3);
+
+    E1 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E0, TMP0);
+
+    E0 = vsha1h_u32(vgetq_lane_u32(ABCD, 0));
+    ABCD = vsha1pq_u32(ABCD, E1, TMP1);
+
+    E0 += E0_SAVED;
+    ABCD = vaddq_u32(ABCD_SAVED, ABCD);
+    vst1q_u32(&state[0], ABCD);
+    state[4] = E0;
+    data += 64;
+  }
+}
+#undef ZQ_K0
+#undef ZQ_K1
+#undef ZQ_K2
+#undef ZQ_K3
+#endif /* ZQ_HAVE_ARMSHA1 */
 
 #if defined(ZQ_HAVE_SHANI)
 /* Four rounds at a time with the x86 SHA extensions, using the sequence from
@@ -262,6 +424,15 @@ void zq_sha1_write(zq_sha1 *s, const char *buf, zq_i64 n) {
   if (n >= 64 && !zq_sha1_portable && (zq_cpu_features() & ZQ_CPU_SHA1) != 0) {
     const zq_i64 blocks = n / 64;
     sha1_blocks_shani(s->h, p, (size_t)blocks);
+    s->len += (zq_u64)blocks * 512;
+    p += blocks * 64;
+    n -= blocks * 64;
+  }
+#endif
+#if defined(ZQ_HAVE_ARMSHA1)
+  if (n >= 64 && !zq_sha1_portable && (zq_cpu_features() & ZQ_CPU_SHA1) != 0) {
+    const zq_i64 blocks = n / 64;
+    sha1_blocks_arm(s->h, p, (size_t)blocks);
     s->len += (zq_u64)blocks * 512;
     p += blocks * 64;
     n -= blocks * 64;

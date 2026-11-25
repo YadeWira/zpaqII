@@ -31,7 +31,7 @@ BUILD    := build$(if $(DEBUG),-debug,)$(if $(NOJIT),-nojit,)
 CORE_SRC := $(wildcard src/core/*.c)
 CORE_OBJ := $(patsubst src/core/%.c,$(BUILD)/obj/%.o,$(CORE_SRC))
 
-.PHONY: all lib test test-e1 test-sha1hw test-fragchain test-digest test-zpaqldif test-fastpath zdis cross win64 win32 oracle clean info
+.PHONY: all lib test test-e1 test-sha1hw test-sha1arm test-fragchain test-digest test-zpaqldif test-fastpath zdis cross win64 win32 oracle clean info
 
 all: lib test
 
@@ -102,6 +102,15 @@ test-zpaqldif: $(BUILD)/zpaql_dif $(BUILD)/e2_manifest.txt
 $(BUILD)/zpaql_dif: tests/unit/zpaql_dif.c $(BUILD)/libzqcore.a
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Isrc/core $< $(BUILD)/libzqcore.a $(LDFLAGS) -o $@
+
+# ARMv8 SHA-1 path.  Skips when the CPU has no crypto extensions, so it is
+# safe to run anywhere; in CI it runs natively on linux-arm64.
+test-sha1arm: $(BUILD)/sha1_arm
+	@$(BUILD)/sha1_arm
+
+$(BUILD)/sha1_arm: tests/unit/sha1_arm.c $(BUILD)/libzqcore.a
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(BUILD)/libzqcore.a $(LDFLAGS) -o $@
 
 test-digest: $(BUILD)/digest
 	@$(BUILD)/digest

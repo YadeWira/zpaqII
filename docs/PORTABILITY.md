@@ -181,6 +181,7 @@ One small `src/core/cpu.c` with `zq_cpu_flags()`, cached in a static:
 | Linux x86-64 | `cpuid` (leaf 7, EBX bit 29 = SHA-NI), `__builtin_cpu_supports` where available |
 | Windows x86/x64 | `cpuid` via `<intrin.h>`; msys/mingw and MSVC both provide it |
 | Linux ARM64 | `getauxval(AT_HWCAP)` → `HWCAP_SHA2` (and `HWCAP_SHA1` for the SHA-1 extension) |
+| ARMv8 SHA-1 | both backends are compiled: the crypto one under `target("+crypto")`, so the build needs no `-march` change and the code runs on CPUs without the extension |
 | macOS ARM64 | `sysctlbyname("hw.optional.arm.FEAT_SHA256")` |
 | fallback | no features: portable C |
 
@@ -192,5 +193,8 @@ is a function pointer chosen once.
 * Behaviour must not depend on the platform: the matrix (`make matrix`) and the
   bit-exact tests run per platform in CI; archives written on one platform must
   extract identically on another (that test already exists for Linux).
-* Byte output must not depend on the SHA backend: a unit test hashes the same
-  buffers through `portable` and through `hw` and compares.
+* Byte output must not depend on the SHA backend: `make test-sha1hw` (x86,
+  SHA-NI) and `make test-sha1arm` (ARMv8) hash the same buffers through
+  `portable` and through the hardware path and compare.  Both skip on a CPU
+  without the extension, so they are safe everywhere; the ARM one runs
+  natively in CI on `ubuntu-24.04-arm` and under qemu with the cross build.

@@ -33,7 +33,7 @@ partly done.
 |---|---|
 | E0–E6: SHA-1/SHA-256/AES/scrypt, ZPAQL VM, predictor and arithmetic coder, container and postprocessors, JIDAC archiver, differential matrix and fuzzing | ✅ done, bit-exact against the oracle |
 | ZPAQL JIT and predictor JIT (x86-64 Linux) | ✅ done |
-| 2.1 parallel fragmenter (`-turbo`) and hardware SHA-1 (SHA-NI) | ✅ done; ARMv8 SHA-1 still uses the portable path |
+| 2.1 parallel fragmenter (`-turbo`) and hardware SHA-1 (SHA-NI, ARMv8) | ✅ done |
 | 2.2 exit-code hygiene (`-strict`) and `-715` | ✅ done |
 | 2.3 configurable integrity (`-hash`, `check`, `-savelist`, `-checklist`) | ✅ done |
 | 2.4 external codecs (`-ma`) | ❌ discarded (ADR-006); the LZ4 work was removed from the tree |
@@ -89,7 +89,6 @@ Measured and dropped, so they are not rediscovered (numbers in
 
 ### 2. Platform loose ends
 
-* ARMv8 SHA-1 block function (detection exists, the portable path is used).
 * Windows **x86** host build (needs FPC on Windows).
 * Run the CLI suite on macOS.
 * Compare bit-exactly against an upstream **built on Windows**; today only

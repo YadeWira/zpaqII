@@ -50,7 +50,7 @@ partly done.
 | Linux x86 (i386) | ✅ cross-build, byte-identical output |
 | Windows x64 (7 and newer) | ✅ built with FPC + mingw, tested in Win7 and Win10 VMs |
 | Windows x86 (7 and newer) | ⏳ needs a FreePascal toolchain for 32-bit Windows |
-| macOS arm64 | ✅ builds in CI; the CLI suite has not been run there yet |
+| macOS arm64 | ⚠️ builds in CI, but since 2026-11-20 the `macos-14` job is cancelled before it gets a runner (see below) |
 
 CI runs six jobs (linux-x86_64, linux-arm64, cross, cross-i386, windows-wine,
 macos-arm64) and all are green on the current head.
@@ -90,7 +90,11 @@ Measured and dropped, so they are not rediscovered (numbers in
 ### 2. Platform loose ends
 
 * Windows **x86** host build (needs FPC on Windows).
-* Run the CLI suite on macOS.
+* Run the CLI suite on macOS.  **Blocked outside the repository:** since
+  2026-11-20 every push has its `macos-arm64` job cancelled with no runner
+  assigned (`runner_name` is empty, so it never starts), while the other five
+  jobs pass.  That looks like the account's macOS minutes rather than a
+  workflow bug, so it needs the account, not a patch.
 * Compare bit-exactly against an upstream **built on Windows**; today only
   functional compatibility in both directions is verified.
 

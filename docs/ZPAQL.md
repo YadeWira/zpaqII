@@ -188,12 +188,23 @@ speed` comes from hashing *four independent messages* in AVX2 lanes; a zpaq
 block is one stream, so that shape does not apply.  On a CPU without SHA-NI
 (the Xeon E5 v4 in this machine) the scalar chain is the ceiling.
 
-So the useful work left in phase B is the **compile cache**, not the JIT
-instruction set: it helps archives with many blocks, where the same config is
-assembled again and again.
+**The compile cache is not worth it either.**  Assembling the predictor JIT
+takes 8.87 us.  An archive with many blocks (`-m3` with a small block size: 45
+blocks over 20 MB) therefore spends 0.40 ms assembling out of 5773 ms of
+extraction, **0.007 %**.  Caching the generated code by config would add a hash,
+a table and a lifetime to save a rounding error.
 
 ## Next
 
-1. **Compile cache** keyed by the config, for archives with many blocks.
-2. *(measured and dropped)* Superinstructions: see above.
-3. *(measured and dropped)* Rewriting SHA-1 by hand: see above.
+Every item the plan listed for phase B was measured and dropped, for the
+reasons above:
+
+1. *(dropped)* Superinstructions: the JIT is already ahead of the oracle.
+2. *(dropped)* Native inverse BWT: done, then superseded by the fast paths.
+3. *(dropped)* Rewriting SHA-1: the portable code is at the scalar ceiling.
+4. *(dropped)* Compile cache: 0.007 % of extraction time.
+
+What that leaves is not a missing feature but a boundary: 7.15's own methods
+are now faster here than in 7.15, and the remaining time is the model doing
+its work.  The next real gains would need a new model or format, which phase 2
+deliberately does not do.
